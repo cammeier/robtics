@@ -9,16 +9,19 @@ class Multiplexer:
         self.last_callback2_time = rospy.get_time()  # Track the time of the last callback2 message
 
     def controller_callback(self, data):
-        if self.selected_input == 1:
-            rospy.loginfo(f"Forwarding from controller: {data.data}")
-            self.pub.publish(data)
+    if self.selected_input == 1:
+        rospy.loginfo(f"Forwarding from controller: linear={data.linear.x}, {data.linear.y}, {data.linear.z}; "
+                      f"angular={data.angular.x}, {data.angular.y}, {data.angular.z}")
+        self.pub.publish(data)
 
     def OA_callback(self, data):
         # When data is received from input 2, override input 1 and reset the timeout
-        rospy.loginfo(f"Forwarding from obstacle avoidance: {data.data}")
+        rospy.loginfo(f"Forwarding from obstacle avoidance: linear={data.linear.x}, {data.linear.y}, {data.linear.z}; "
+                      f"angular={data.angular.x}, {data.angular.y}, {data.angular.z}")
         self.selected_input = 2
         self.pub.publish(data)
         self.last_callback2_time = rospy.get_time()  # Update the time of the last callback2 message
+
 
     def switch_input(self, event):
         # Switch back to input 1 if a certain amount of time (e.g., 5 seconds) has passed since callback2 was received
