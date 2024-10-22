@@ -55,14 +55,14 @@ def publish_movement(publisher, movement):
 
     while (is_light_left >= 3000 or is_light_front_left >= 3000 or is_light_center_left >= 3000 ): 
         movement.angular.z = -0.1
-        print("\npublishing left move based on light!!!\n")
+        print("\npublishing right turn move based on light!!!\n")
         publisher.publish(movement)
         #rospy.sleep()
 
 
     while (is_light_right >= 3000 or is_light_front_right >= 3000 or is_light_center_right >= 3000 ): 
         movement.angular.z = 0.1
-        print("\npublishing right turn move based on light!!!\n")
+        print("\npublishing left turn move based on light!!!\n")
         publisher.publish(movement)
         #rospy.sleep()
 
