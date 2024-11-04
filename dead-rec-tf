@@ -31,7 +31,7 @@ def counter_callback(msg):
             [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
         )
         # Log the values
-        rospy.loginfo("\nx = %f, y = %f, twist_angle = %f\n", current_x, current_y, twist_angle)
+#        rospy.loginfo("\nx = %f, y = %f, twist_angle = %f\n", current_x, current_y, twist_angle)
 
 
 def cartesian2polar(x,y,theta): 
@@ -41,7 +41,7 @@ def cartesian2polar(x,y,theta):
 
         beta = -(theta+alpha) 
 
-        rospy.loginfo("in the cartesian to polar function\nrho = %f alpha = %f beta= %f\n", rho, alpha , beta);
+#        rospy.loginfo("in the cartesian to polar function\nrho = %f alpha = %f beta= %f\n", rho, alpha , beta);
         #rospy.loginfo("\n*x = %fy= %f theta= %f\n", current_x, current_y, twist_angle);
 
         a = [rho , alpha , beta ] 
@@ -63,11 +63,10 @@ def velocity_publisher(v , w):
     
     move_cmd  = Twist()
 
-    rospy.loginfo("v = %f u = %f " , v, w )
+#    rospy.loginfo("v = %f u = %f " , v, w )
 
     move_cmd.linear.x = v
     move_cmd.angular.z = w
-   
     cmd_vel_pub.publish(move_cmd) 
 
 
@@ -82,8 +81,8 @@ def reachPoint():
         velocity_publisher( vw[0],vw[1] ) 
 #       rospy.loginfo(" before while loop ->rho = %f alpha %f beta %f" , current_x, current_y, twist_angle) 
 
-        while abs(errorArray[0])> .07 : # i deleted this to make it stop: nd abs(xythetaArray[2])>np.radians(5)
-                rospy.loginfo(" theta = %f " , twist_angle)             
+        while abs(errorArray[0])> .5 : # i deleted this to make it stop: nd abs(xythetaArray[2])>np.radians(5)
+#               rospy.loginfo(" theta = %f " , twist_angle)             
 #               rospy.loginfo(" got here!!!!!!")
                 rospy.loginfo(" rho = %f > .1 | alpha %f > %f | beta %f > %f" , errorArray[0], errorArray[1], np.radians(10) ,  errorArray[2] , np.radians(10)) 
 
@@ -117,6 +116,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
 
