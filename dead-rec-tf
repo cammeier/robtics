@@ -1,0 +1,121 @@
+mport tf
+import math
+import numpy as np
+import rospy
+import tf2_ros
+from tf2_msgs.msg import TFMessage
+from nav_msgs.msg import Odometry
+from geometry_msgs.msg import Twist
+global current_y
+global current_x
+global twist_angle
+cmd_vel_pub = None
+
+def counter_callback(msg):
+
+
+    global current_y
+    global current_x
+    global twist_angle
+
+    # Iterate through all transforms in the TFMessage
+    for transform in msg.transforms:
+        # Access translation values
+        current_x = transform.transform.translation.z
+        current_y = transform.transform.translation.y
+
+        # Access rotation values and convert from quaternion to Euler
+        orientation_q = transform.transform.rotation
+        _, _, twist_angle = tf.transformations.euler_from_quaternion(
+            [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
+        )
+        # Log the values
+        rospy.loginfo("\nx = %f, y = %f, twist_angle = %f\n", current_x, current_y, twist_angle)
+
+
+def cartesian2polar(x,y,theta): 
+        rho = math.sqrt((x)**2 + (y)**2)
+
+        alpha = -theta + math.atan2(y,x)
+
+        beta = -(theta+alpha) 
+
+        rospy.loginfo("in the cartesian to polar function\nrho = %f alpha = %f beta= %f\n", rho, alpha , beta);
+        #rospy.loginfo("\n*x = %fy= %f theta= %f\n", current_x, current_y, twist_angle);
+
+        a = [rho , alpha , beta ] 
+        return a 
+
+
+def compute_vw( pitch, roll , beta , Kpitch, Kroll, Kbeta): 
+    K=np.array([[Kpitch, 0, 0],
+                [0 , Kroll , Kbeta]]) 
+    X=np.array([[pitch],
+                [roll],
+                [beta]])
+    vw = np.matmul(K,X)
+
+    return vw
+
+
+def velocity_publisher(v , w):
+    
+    move_cmd  = Twist()
+
+    rospy.loginfo("v = %f u = %f " , v, w )
+
+    move_cmd.linear.x = v
+    move_cmd.angular.z = w
+   
+    cmd_vel_pub.publish(move_cmd) 
+
+
+def reachPoint():
+        #current_x=0.0
+        #current_y=0.0
+        #twist_angle=np.radians(0)
+        #rospy.loginfo("\nx = %f, y = %f, twist_angle = %f\n", current_x, current_y, twist_angle)
+        #rospy.loginfo("\n*x = %fy= %f theta= %f\n", current_x, current_y, twist_angle)
+        errorArray = cartesian2polar(current_x, current_y , twist_angle) 
+        vw = compute_vw(errorArray[0],errorArray[1],errorArray[2],.2,.21,-.29)
+        velocity_publisher( vw[0],vw[1] ) 
+#       rospy.loginfo(" before while loop ->rho = %f alpha %f beta %f" , current_x, current_y, twist_angle) 
+
+        while abs(errorArray[0])> .07 : # i deleted this to make it stop: nd abs(xythetaArray[2])>np.radians(5)
+                rospy.loginfo(" theta = %f " , twist_angle)             
+#               rospy.loginfo(" got here!!!!!!")
+                rospy.loginfo(" rho = %f > .1 | alpha %f > %f | beta %f > %f" , errorArray[0], errorArray[1], np.radians(10) ,  errorArray[2] , np.radians(10)) 
+
+
+                errorArray = cartesian2polar(current_x, current_y , twist_angle)
+                vw = compute_vw(errorArray[0],errorArray[1],errorArray[2],.2,.21,-.29)
+                velocity_publisher( vw[0],vw[1] )
+                #rospy.sleep(1.)
+                rate.sleep()
+
+        velocity_publisher(0,0)
+
+
+
+
+
+def main():
+        rospy.sleep(1)
+        global cmd_vel_pub
+        # Initialize the ROS node
+        rospy.init_node('odom_sub_node', anonymous=False)
+        global rate
+        rate = rospy.Rate(15) 
+        # Create a subscriber to the "/odom" topic
+        rospy.Subscriber("/tfapril", TFMessage, counter_callback)
+        cmd_vel_pub = rospy.Publisher('/controller/cmd_vel' , Twist , queue_size = 100)
+        rospy.sleep(3)
+        reachPoint()
+        rospy.spin()
+
+
+if __name__ == '__main__':
+    main()
+
+
+
