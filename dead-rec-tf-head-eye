@@ -21,8 +21,7 @@ def counter_callback(msg):
 
     # Iterate through all transforms in the TFMessage
     for transform in msg.transforms:
-        # Access translation values#!/usr/bin/env python3
-
+        # Access translation values
         current_x = transform.transform.translation.z
         current_y = transform.transform.translation.y
 
@@ -32,7 +31,8 @@ def counter_callback(msg):
             [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
         )
         # Log the values
-        rospy.loginfo("\nx = %f, y = %f, twist_angle = %f\n", current_x, current_y, twist_angle)
+#        rospy.loginfo("\nx = %f, y = %f, twist_angle = %f\n", current_x, current_y, twist_angle)
+
 
 
 def cartesian2polar(x,y,theta):
@@ -69,8 +69,7 @@ def compute_vw( pitch, roll , beta , Kpitch, Kroll, Kbeta):
                 [0 , Kroll , Kbeta]]) 
     X=np.array([[pitch],
                 [roll],
-                [beta]])#!/usr/bin/env python3
-
+                [beta]])
     vw = np.matmul(K,X)
 
     return vw
@@ -80,11 +79,10 @@ def velocity_publisher(v , w):
     
     move_cmd  = Twist()
 
-    rospy.loginfo("v = %f u = %f " , v, w )
+#    rospy.loginfo("v = %f u = %f " , v, w )
 
     move_cmd.linear.x = v
     move_cmd.angular.z = w
-   
     cmd_vel_pub.publish(move_cmd) 
 
 
@@ -99,8 +97,8 @@ def reachPoint():
         velocity_publisher( vw[0],vw[1] ) 
 #       rospy.loginfo(" before while loop ->rho = %f alpha %f beta %f" , current_x, current_y, twist_angle) 
 
-        while abs(errorArray[0])> .07 : # i deleted this to make it stop: nd abs(xythetaArray[2])>np.radians(5)
-                rospy.loginfo(" theta = %f " , twist_angle)             
+        while abs(errorArray[0])> .5 : # i deleted this to make it stop: nd abs(xythetaArray[2])>np.radians(5)
+#               rospy.loginfo(" theta = %f " , twist_angle)             
 #               rospy.loginfo(" got here!!!!!!")
                 rospy.loginfo(" rho = %f > .1 | alpha %f > %f | beta %f > %f" , errorArray[0], errorArray[1], np.radians(10) ,  errorArray[2] , np.radians(10)) 
 
@@ -134,5 +132,3 @@ def main():
 
 if __name__ == '__main__':
     main()
-
-
