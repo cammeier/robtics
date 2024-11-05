@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+import tf
+import math
+import numpy as np
+import rospy
+import tf2_ros
+from tf2_msgs.msg import TFMessage
+from nav_msgs.msg import Odometry
+from geometry_msgs.msg import Twist
+from time import time
+
+global current_y
+global current_x
+global twist_angle
+global last_received_time
+cmd_vel_pub = None
+
+# Time interval for inactivity (seconds)
+INACTIVITY_THRESHOLD = .25  # 5 seconds of inactivity
+TURN_SPEED = 0.1  # The angular speed for turning
+
+def counter_callback(msg):
+    global current_y, current_x, twist_angle, last_received_time
+
+    # Update the last received time
+    last_received_time = time()
+
+    # Iterate through all transforms in the TFMessage
+    for transform in msg.transforms:
+        # Access translation values
+        current_x = transform.transform.translation.z
+        current_y = transform.transform.translation.y
+
+        # Access rotation values and convert from quaternion to Euler
+        orientation_q = transform.transform.rotation
+        _, _, twist_angle = tf.transformations.euler_from_quaternion(
+            [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
+        )
+        # Log the values
+        rospy.loginfo("\nx = %f, y = %f, twist_angle = %f\n", current_x, current_y, twist_angle)
+
+
+
+def cartesian2polar(x,y,theta): 
+        rho = math.sqrt((x)**2 + (y)**2)
+
+        alpha = -theta + math.atan2(y,x)
+
+        beta = -(theta+alpha) 
+
+#        rospy.loginfo("in the cartesian to polar function\nrho = %f alpha = %f beta= %f\n", rho, alpha , beta);
+        #rospy.loginfo("\n*x = %fy= %f theta= %f\n", current_x, current_y, twist_angle);
+
+        a = [rho , alpha , beta ] 
+        return a 
+
+def compute_vw( pitch, roll , beta , Kpitch, Kroll, Kbeta): 
+    K=np.array([[Kpitch, 0, 0],
+                [0 , Kroll , Kbeta]]) 
+    X=np.array([[pitch],
+                [roll],
+                [beta]])
+    vw = np.matmul(K,X)
+
+    return vw
+
+
+def velocity_publisher(v , w):
+    
+    move_cmd  = Twist()
+
+#    rospy.loginfo("v = %f u = %f " , v, w )
+
+    move_cmd.linear.x = v
+    move_cmd.angular.z = w
+    cmd_vel_pub.publish(move_cmd) 
+
+
+
+def turn_in_place():
+    # Publish a rotation to turn 360 degrees
+    move_cmd = Twist()
+    move_cmd.angular.z = TURN_SPEED  # Positive for clockwise, negative for counterclockwise
+    cmd_vel_pub.publish(move_cmd)
+
+def stop_robot():
+    # Stop the robot
+    move_cmd = Twist()
+    move_cmd.linear.x = 0
+    move_cmd.angular.z = 0
+    cmd_vel_pub.publish(move_cmd)
+
+def reachPoint():
+    global last_received_time
+
+    # Main loop to drive towards the target point
+    errorArray = cartesian2polar(current_x, current_y, twist_angle)
+    vw = compute_vw(errorArray[0], errorArray[1], errorArray[2], .1, .21, -0.29)
+    velocity_publisher(vw[0], vw[1])
+
+    while abs(errorArray[0]) > 0.5:
+        # Check if we haven't received a new message in a while
+        if time() - last_received_time > INACTIVITY_THRESHOLD:
+            rospy.loginfo("No new data received, turning in place.")
+            turn_in_place()  # Start turning
+
+        else:
+            # Update errorArray and compute new velocity commands
+            errorArray = cartesian2polar(current_x, current_y, twist_angle)
+            vw = compute_vw(errorArray[0], errorArray[1], errorArray[2], .11, .21, 0)
+            velocity_publisher(vw[0], vw[1])
+
+        rate.sleep()
+
+    stop_robot()  # Stop when the target is reached
+
+def main():
+    global cmd_vel_pub, last_received_time, rate
+
+    rospy.sleep(1)
+    last_received_time = time()  # Initialize the last received time
+    rospy.init_node('odom_sub_node', anonymous=False)
+
+    rate = rospy.Rate(15)  # 15Hz loop rate
+    rospy.Subscriber("/tfapril", TFMessage, counter_callback)
+    cmd_vel_pub = rospy.Publisher('/controller/cmd_vel', Twist, queue_size=100)
+
+    rospy.sleep(3)
+    reachPoint()
+    rospy.spin()
+
+if __name__ == '__main__':
+    main()
