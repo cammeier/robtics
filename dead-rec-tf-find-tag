@@ -1,0 +1,123 @@
+  GNU nano 4.8                                                           src/nav/src/dead-rec-tf-with-find-no-tag.py                                                                     
+#!/usr/bin/env python3
+import tf
+import math
+import numpy as np
+import rospy
+import tf2_ros
+from tf2_msgs.msg import TFMessage
+from nav_msgs.msg import Odometry
+from geometry_msgs.msg import Twist
+from time import time
+
+current_y=None
+current_x=None
+twist_angle=None
+last_received_time=None
+cmd_vel_pub = None
+
+# Time interval for inactivity (seconds)
+INACTIVITY_THRESHOLD = 0.25  # 5 seconds of inactivity
+TURN_SPEED = 0.5  # The angular speed for turning
+
+def counter_callback(msg):
+    global current_y, current_x, twist_angle, last_received_time
+
+    # Update the last received time
+    last_received_time = time()
+
+    # Iterate through all transforms in the TFMessage
+    for transform in msg.transforms:
+        # Access translation values
+        current_x = transform.transform.translation.z
+        current_y = transform.transform.translation.y
+
+        # Access rotation values and convert from quaternion to Euler
+        orientation_q = transform.transform.rotation
+        _, _, twist_angle = tf.transformations.euler_from_quaternion(
+            [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
+        )
+        # Log the values
+        rospy.loginfo("\nx = %f, y = %f, twist_angle = %f\n", current_x, current_y, twist_angle)
+
+def cartesian2polar(x, y, theta):
+    rho = math.sqrt((x)**2 + (y)**2)
+    alpha = -theta + math.atan2(y, x)
+    beta = -(theta + alpha)
+    return [rho, alpha, beta]
+
+def compute_vw(pitch, roll, beta, Kpitch, Kroll, Kbeta):
+    K = np.array([[Kpitch, 0, 0],
+                  [0, Kroll, Kbeta]]) 
+    X = np.array([[pitch],
+                  [roll],
+                  [beta]])
+    vw = np.matmul(K, X)
+    return vw
+
+def velocity_publisher(v, w):
+    move_cmd = Twist()
+    move_cmd.linear.x = v
+    move_cmd.angular.z = w
+    cmd_vel_pub.publish(move_cmd)
+
+def turn_in_place():
+    move_cmd = Twist()
+    move_cmd.angular.z = TURN_SPEED  # Positive for clockwise, negative for counterclockwise
+    cmd_vel_pub.publish(move_cmd)
+def stop_robot():
+    move_cmd = Twist()
+    move_cmd.linear.x = 0
+    move_cmd.angular.z = 0
+    cmd_vel_pub.publish(move_cmd)
+
+def reachPoint():
+    global last_received_time, current_x, current_y
+
+    # If no tag data is available, try to find a tag (e.g., keep turning in place)
+    while current_x is None or current_y is None:
+        rospy.loginfo("No tag data received. Turning in place to search for tag.")
+        turn_in_place()
+        rospy.sleep(1)  # Give some time to rotate
+        rospy.loginfo("Trying to find tag...")
+        continue  # Keep turning until we get the tag data
+
+    # Now that we have the tag data, proceed to the point
+    errorArray = cartesian2polar(current_x, current_y, twist_angle)
+    vw = compute_vw(errorArray[0], errorArray[1], errorArray[2], 0.1, 0.21, -0.29)
+    velocity_publisher(vw[0], vw[1])
+
+    while abs(errorArray[0]) > 0.35:
+        # Check if we haven't received new data for a while
+        if time() - last_received_time > INACTIVITY_THRESHOLD:
+            rospy.loginfo("No new data received, turning in place.")
+            turn_in_place()  # Start turning to search again if we haven't received data recently
+        else:
+            # Update errorArray and compute new velocity commands
+            errorArray = cartesian2polar(current_x, current_y, twist_angle)
+            vw = compute_vw(errorArray[0], errorArray[1], errorArray[2], 0.11, 0.21, 0)
+            velocity_publisher(vw[0], vw[1])
+
+        rate.sleep()
+
+    stop_robot()  # Stop when the target is reached
+
+def main():
+    global cmd_vel_pub, last_received_time, rate
+
+    rospy.sleep(1)
+    last_received_time = time()  # Initialize the last received time
+    rospy.init_node('odom_sub_node', anonymous=False)
+
+    rate = rospy.Rate(15)  # 15Hz loop rate
+    rospy.Subscriber("/tfapril", TFMessage, counter_callback)
+    cmd_vel_pub = rospy.Publisher('/visionGuidance/cmd_vel', Twist, queue_size=100)
+
+    rospy.sleep(3)
+    reachPoint()
+    rospy.spin()
+
+if __name__ == '__main__':
+    main()
+
+
