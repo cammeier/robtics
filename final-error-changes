@@ -116,6 +116,10 @@ def clamp_velocity(v, w):
 def turn_in_place():
     # Publish a rotation to turn 360 degrees
     move_cmd = Twist()
+    move_cmd.angular.z = 0
+    move_cmd.linear.x = 0
+    cmd_vel_pub.publish(move_cmd)
+    rospy.sleep(.25) 
     if turn_directionTF  > 0: 
        move_cmd.angular.z = -TURN_SPEED  # Positive for clockwise, negative for counterclockwise
     if turn_directionTF  < 0:
@@ -236,7 +240,7 @@ def main():
     rospy.Subscriber("odom", Odometry, counter_callback)
 
     # Publisher for sending velocity commands
-    cmd_vel_pub = rospy.Publisher('/controller/cmd_vel', Twist, queue_size=100)
+    cmd_vel_pub = rospy.Publisher('controller/cmd_vel', Twist, queue_size=100)
 
     rospy.sleep(3)
 
