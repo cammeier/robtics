@@ -1,1 +1,135 @@
+#!/usr/bin/env python3
+import tf
+import math
+import numpy as np
+import rospy
+import tf2_ros
+from tf2_msgs.msg import TFMessage
+from nav_msgs.msg import Odometry
+from geometry_msgs.msg import Twist
+from time import time
+
+global current_y
+global current_x
+global twist_angle
+global last_received_time
+global turn_direction
+cmd_vel_pub = None
+
+# Time interval for inactivity (seconds)
+INACTIVITY_THRESHOLD = .25  # 5 seconds of inactivity
+TURN_SPEED = 0.1  # The angular speed for turning
+
+def counter_callback(msg):
+    global current_y, current_x, twist_angle, last_received_time, turn_direction
+
+    # Update the last received time
+    last_received_time = time()
+
+    # Iterate through all transforms in the TFMessage
+    for transform in msg.transforms:
+        rospy.loginfo("Received transform:")
+        rospy.loginfo("Translation: x=%f, y=%f, z=%f",
+            transform.transform.translation.x,
+            transform.transform.translation.y,
+            transform.transform.translation.z)        # Access translation values
+        current_x = transform.transform.translation.z
+        current_y = transform.transform.translation.y
+
+        # Access rotation values and convert from quaternion to Euler
+        orientation_q = transform.transform.rotation
+        _, _, twist_angle = tf.transformations.euler_from_quaternion(
+            [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
+        )
+        turn_direction = orientation_q.z
+        # Log the values
+        rospy.loginfo("\nx = %f, y = %f, twist_angle = %f\n", current_x, current_y, twist_angle)
+
+def cartesian2polar(x,y,theta): 
+        rho = math.sqrt((x)**2 + (y)**2)
+
+        alpha = -theta + math.atan2(y,x)
+
+        beta = -(theta+alpha) 
+
+#        rospy.loginfo("in the cartesian to polar function\nrho = %f alpha = %f beta= %f\n", rho, alpha , beta);
+        #rospy.loginfo("\n*x = %fy= %f theta= %f\n", current_x, current_y, twist_angle);
+
+        a = [rho , alpha , beta ] 
+        return a 
+
+def compute_vw( pitch, roll , beta , Kpitch, Kroll, Kbeta): 
+    K=np.array([[Kpitch, 0, 0],
+                [0 , Kroll , Kbeta]]) 
+    X=np.array([[pitch],
+                [roll],
+                [beta]])
+    vw = np.matmul(K,X)
+
+    return vw
+
+
+def velocity_publisher(v , w):
+    
+    move_cmd  = Twist()
+
+#    rospy.loginfo("v = %f u = %f " , v, w )
+
+    move_cmd.linear.x = v
+    if move_cmd.linear.x > 0.1:
+        move_cmd.linear.x = .05
+    move_cmd.angular.z = w
+    cmd_vel_pub.publish(move_cmd) 
+
+
+
+def turn_in_place():
+    # Publish a rotation to turn 360 degrees
+    move_cmd = Twist()
+    if turn_direction  > 0: 
+       move_cmd.angular.z = -TURN_SPEED  # Positive for clockwise, negative for counterclockwise
+    if turn_direction  < 0:
+       move_cmd.angular.z = TURN_SPEED  # Positive for clockwise, negative for counterclockwise
+
+
+    cmd_vel_pub.publish(move_cmd)
+
+    rospy.loginfo("Reached the destination: x = %f, y = %f, angle = %f", current_x, current_y, xythetaArray[2])
+    # Turn the robot to face the destination angle
+    while abs(xythetaArray[2]) > np.radians(1): 
+        velocity_publisher(0, 0.1)  # Turn robot with angular velocity
+        xythetaArray = transformcoordinates(transformed_x, transformed_y, transformed_theta)
+
+        rospy.loginfo("Reached the destination: x = %f, y = %f, angle = %f", current_x, current_y, xythetaArray[2])
+        rate.sleep()
+    velocity_publisher(0,0)
+    rospy.loginfo("Reached the destination: x = %f, y = %f, angle = %f", destination_x, destination_y, destination_theta)
+def main():
+    global cmd_vel_pub, rate
+    rospy.init_node('odom_sub_node', anonymous=False)
+
+    rate = rospy.Rate(10)  # 10 Hz rate for control loop
+
+    # Subscriber to the "/odom" topic for current position updates
+    rospy.Subscriber("odom", Odometry, counter_callback)
+
+    # Publisher for sending velocity commands
+    cmd_vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=100)
+
+    # Start the motion towards a point (example coordinates)
+#    reachPoint(0.9,0,0)
+    rospy.sleep(2)  # Allow some time for the robot to start up
+    reachPointOdom(0, 0, 90)
+    reachPointOdom(0.925,0,0)
+#    reachPoint(1.8,0,0)
+#    rospy.sleep(2)  # Allow some time for the robot to start up
+#    reachPoint(0, 0,-90)
+#    reachPoint(2.8,0,0)
+#    rospy.sleep(2)  # Allow some time for the robot to start up
+#    reachPoint(0, 0, 90)
+
+    rospy.spin()
+
+if __name__ == '__main__':
+    main()
 
