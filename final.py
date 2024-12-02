@@ -28,8 +28,6 @@ global last_received_timeTF
 global turn_directionTF
 cmd_vel_pubTF = None
 
-
-
 # Threshold for maximum linear and angular velocities
 v_max = 0.04  # Maximum linear velocity (m/s)
 w_max = 0.4   # Maximum angular velocity (rad/s)
@@ -115,9 +113,9 @@ def clamp_velocity(v, w):
 def turn_in_place():
     # Publish a rotation to turn 360 degrees
     move_cmd = Twist()
-    if turn_direction  > 0: 
+    if turn_directionTF  > 0: 
        move_cmd.angular.z = -TURN_SPEED  # Positive for clockwise, negative for counterclockwise
-    if turn_direction  < 0:
+    if turn_directionTF  < 0:
        move_cmd.angular.z = TURN_SPEED  # Positive for clockwise, negative for counterclockwise
 
 
@@ -128,6 +126,14 @@ def stop_robot():
     move_cmd = Twist()
     move_cmd.linear.x = 0
     move_cmd.angular.z = 0
+    cmd_vel_pub.publish(move_cmd)
+
+def velocity_publisherTF(v, w):
+    move_cmd = Twist()
+    move_cmd.linear.x = v
+    if v > .4: 
+        move_cmd.linear.x = .08
+    move_cmd.angular.z = w
     cmd_vel_pub.publish(move_cmd)
     
 def velocity_publisher(v, w):
@@ -152,7 +158,7 @@ def reachPoint():
         continue  # Keep turning until we get the tag data
 
     # Main loop to drive towards the target point
-    errorArray = cartesian2polar(current_x, current_y, twist_angle)
+    errorArray = cartesian2polar(current_xTF, current_yTF, twist_angleTF)
     vw = compute_vw(errorArray[0], errorArray[1], errorArray[2], .1, .21, -0.29)
     velocity_publisher(vw[0], vw[1])
 
@@ -164,7 +170,7 @@ def reachPoint():
 
         else:
             # Update errorArray and compute new velocity commands
-            errorArray = cartesian2polar(current_x, current_y, twist_angle)
+            errorArray = cartesian2polar(current_xTF, current_yTF, twist_angleTF)
             vw = compute_vw(errorArray[0], errorArray[1], errorArray[2], .11, .21, 0)
             velocity_publisher(vw[0], vw[1])
 
@@ -206,7 +212,7 @@ def reachPointOdom(destination_x, destination_y, destination_angle):
 
         vw = compute_vw(errorArray[0], errorArray[1], errorArray[2], 0.15, 0.16, -0.12)
 
-        velocity_publisher(vw[0], vw[1])
+        velocity_publisherTF(vw[0], vw[1])
 
         if abs(errorArray[0]) < 0.08:
             break
@@ -221,18 +227,77 @@ def main():
 
     rate = rospy.Rate(15)  # 15Hz loop rate
     rospy.Subscriber("/tfapril", TFMessage, counter_callbackTF)
-    cmd_vel_pub = rospy.Publisher('/visionGuidance/cmd_vel', Twist, queue_size=100)
+    cmd_vel_pubTF = rospy.Publisher('/visionGuidance/cmd_vel', Twist, queue_size=100)
 
     # Subscriber to the "/odom" topic for current position updates
     rospy.Subscriber("odom", Odometry, counter_callback)
 
     # Publisher for sending velocity commands
-    cmd_vel_pub = rospy.Publisher('/cmd_vel', Twist, queue_size=100)
+    cmd_vel_pub = rospy.Publisher('/controller/cmd_vel', Twist, queue_size=100)
 
     rospy.sleep(3)
-    reachPoint()
-    reachPointOdom(0,0,90)
+
+    #with new multiplexer
     reachPointOdom(.93,0,0)
+    reachPointOdom(0,0,90)
+    #look for tag
+
+    reachPoint()
+
+    #1st corner
+    reachPointOdom(0,0, -90)
+    reachPoint()
+
+    #crossing catwalk
+
+    reachPointOdom(0,0,-90)
+    reachPoint()
+    #in second corner before robot arm 
+
+    reachPointOdom(0,0,-90)
+    reachPointOdom(.93,0,0)
+    #communicate with arm 
+
+    rospy.sleep(10)
+    reachPointOdom(0,0,-180)
+    reachPointOdom(.93,0,0)
+    reachPointOdom(0,0, 90)
+    #in 3rd corner facing far tag
+
+    reachPoint()
+    #need to stop far away 
+
+
+    #assuming stopped at right distinace 
+    reachPointOdom(0,0, 90)
+    reachPoint()
+    reachPointOdom(0,0, -90)
+    #in 4th corner facing last tag
+
+    reachPoint()
+    reachPointOdom(0,0, -90)
+    #in 5th corner facing final position
+
+    reachPointOdom(.93,0,0)
+
+    #DONE 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     #rospy.spin()
 
 if __name__ == '__main__':
