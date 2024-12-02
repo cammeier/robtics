@@ -56,10 +56,11 @@ def counter_callbackTF(msg):
     # Iterate through all transforms in the TFMessage
     for transform in msg.transforms:
         rospy.loginfo("Received transform:")
-        rospy.loginfo("Translation: x=%f, y=%f, z=%f",
+        rospy.loginfo("** TF ** Translation: x=%f, y=%f, z=%f , angle in relation to tag (radians)  = %f",
             transform.transform.translation.x,
             transform.transform.translation.y,
-            transform.transform.translation.z)        # Access translation values
+            transform.transform.translation.z.
+            math.degrees(orientation_q.z))        # Access translation values
         current_xTF = transform.transform.translation.z
         current_yTF = transform.transform.translation.y
 
