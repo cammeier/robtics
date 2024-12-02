@@ -178,7 +178,7 @@ def reachPoint(error):
         else:
             # Update errorArray and compute new velocity commands
             errorArray = cartesian2polar(current_xTF, current_yTF, twist_angleTF)
-            vw = compute_vw(errorArray[0], errorArray[1], errorArray[2], .11, .21, 0)
+            vw = compute_vw(errorArray[0], errorArray[1], errorArray[2], .11, .21, -.029)
             velocity_publisher(vw[0], vw[1])
 
         rate.sleep()
