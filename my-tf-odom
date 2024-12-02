@@ -83,6 +83,7 @@ def velocity_publisher(v , w):
 
 
 
+
 def turn_in_place():
     # Publish a rotation to turn 360 degrees
     move_cmd = Twist()
@@ -94,16 +95,45 @@ def turn_in_place():
 
     cmd_vel_pub.publish(move_cmd)
 
-    rospy.loginfo("Reached the destination: x = %f, y = %f, angle = %f", current_x, current_y, xythetaArray[2])
-    # Turn the robot to face the destination angle
-    while abs(xythetaArray[2]) > np.radians(1): 
-        velocity_publisher(0, 0.1)  # Turn robot with angular velocity
-        xythetaArray = transformcoordinates(transformed_x, transformed_y, transformed_theta)
+def stop_robot():
+    # Stop the robot
+    move_cmd = Twist()
+    move_cmd.linear.x = 0
+    move_cmd.angular.z = 0
+    cmd_vel_pub.publish(move_cmd)
 
-        rospy.loginfo("Reached the destination: x = %f, y = %f, angle = %f", current_x, current_y, xythetaArray[2])
+def reachPoint():
+    global last_received_time, current_x, current_y
+
+    # If no tag data is available, try to find a tag (e.g., keep turning in place)
+    while current_x is None or current_y is None:
+        rospy.loginfo("No tag data received. Turning in place to search for tag.")
+        turn_in_place()
+        rospy.sleep(1)  # Give some time to rotate
+        rospy.loginfo("Trying to find tag...")
+        continue  # Keep turning until we get the tag data
+
+    # Main loop to drive towards the target point
+    errorArray = cartesian2polar(current_x, current_y, twist_angle)
+    vw = compute_vw(errorArray[0], errorArray[1], errorArray[2], .1, .21, -0.29)
+    velocity_publisher(vw[0], vw[1])
+
+    while abs(errorArray[0]) > 0.35:
+        # Check if we haven't received a new message in a while
+        if time() - last_received_time > INACTIVITY_THRESHOLD:
+            rospy.loginfo("No new data received, turning in place.")
+            turn_in_place()  # Start turning
+
+        else:
+            # Update errorArray and compute new velocity commands
+            errorArray = cartesian2polar(current_x, current_y, twist_angle)
+            vw = compute_vw(errorArray[0], errorArray[1], errorArray[2], .11, .21, 0)
+            velocity_publisher(vw[0], vw[1])
+
         rate.sleep()
-    velocity_publisher(0,0)
-    rospy.loginfo("Reached the destination: x = %f, y = %f, angle = %f", destination_x, destination_y, destination_theta)
+
+    stop_robot()  # Stop when the target is reached
+
 def main():
     global cmd_vel_pub, rate
     rospy.init_node('odom_sub_node', anonymous=False)
