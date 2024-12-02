@@ -256,7 +256,7 @@ def main():
     reachPointOdom(0,0, -90)
     reachPoint(ERROR)
 
-    #crossing catwalk
+    #crossing middle walkway
 
     reachPointOdom(0,0,-90)
     reachPoint(ERROR)
@@ -272,6 +272,8 @@ def main():
     reachPointOdom(0,0, 90)
     #in 3rd corner facing far tag
 
+
+    #need to measure exactly how far to be
     reachPoint(3.0)
     #need to stop far away 
 
