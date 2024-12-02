@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+!/usr/bin/env python3
 import tf
 import math
 import numpy as np
@@ -28,6 +28,8 @@ global last_received_timeTF
 global turn_directionTF
 cmd_vel_pubTF = None
 
+
+
 # Threshold for maximum linear and angular velocities
 v_max = 0.04  # Maximum linear velocity (m/s)
 w_max = 0.4   # Maximum angular velocity (rad/s)
@@ -43,7 +45,6 @@ def counter_callback(msg):
     twist_angle = euler[2]
     current_y = msg.pose.pose.position.y
     current_x = msg.pose.pose.position.x
-
 def counter_callbackTF(msg):
     global current_yTF, current_xTF, twist_angleTF, last_received_timeTF, turn_directionTF
 
@@ -60,7 +61,7 @@ def counter_callbackTF(msg):
         current_xTF = transform.transform.translation.z
         current_yTF = transform.transform.translation.y
 
-        # Access rotation values and convert from quaternion to Euler
+
         orientation_q = transform.transform.rotation
         _, _, twist_angleTF = tf.transformations.euler_from_quaternion(
             [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
@@ -110,15 +111,18 @@ def clamp_velocity(v, w):
     w = min(w, w_max)  # Apply w_max limit
     return v, w
     
+
 def turn_in_place():
     # Publish a rotation to turn 360 degrees
     move_cmd = Twist()
+   # move_cmd.angular.z = 0
+   # move_cmd.linear.x = 0
+   # cmd_vel_pub.publish(move_cmd)
+    #rospy.sleep(1) 
     if turn_directionTF  > 0: 
        move_cmd.angular.z = -TURN_SPEED  # Positive for clockwise, negative for counterclockwise
     if turn_directionTF  < 0:
        move_cmd.angular.z = TURN_SPEED  # Positive for clockwise, negative for counterclockwise
-
-
     cmd_vel_pub.publish(move_cmd)
 
 def stop_robot():
@@ -128,13 +132,17 @@ def stop_robot():
     move_cmd.angular.z = 0
     cmd_vel_pub.publish(move_cmd)
 
-def velocity_publisherTF(v, w):
-    move_cmd = Twist()
+def velocity_publisherTF(v , w):
+    
+    move_cmd  = Twist()
+
+#    rospy.loginfo("v = %f u = %f " , v, w )
+
     move_cmd.linear.x = v
-    if v > .4: 
-        move_cmd.linear.x = .08
+    if move_cmd.linear.x > 0.1:
+        move_cmd.linear.x = .05
     move_cmd.angular.z = w
-    cmd_vel_pub.publish(move_cmd)
+    cmd_vel_pub.publish(move_cmd) 
     
 def velocity_publisher(v, w):
     move_cmd = Twist()
@@ -159,7 +167,7 @@ def reachPoint():
 
     # Main loop to drive towards the target point
     errorArray = cartesian2polar(current_xTF, current_yTF, twist_angleTF)
-    vw = compute_vw(errorArray[0], errorArray[1], errorArray[2], .1, .21, -0.29)
+    vw = compute_vw(errorArray[0], errorArray[1], errorArray[2], .14, .02, .22)
     velocity_publisher(vw[0], vw[1])
 
     while abs(errorArray[0]) > 0.35:
@@ -171,8 +179,8 @@ def reachPoint():
         else:
             # Update errorArray and compute new velocity commands
             errorArray = cartesian2polar(current_xTF, current_yTF, twist_angleTF)
-            vw = compute_vw(errorArray[0], errorArray[1], errorArray[2], .11, .21, 0)
-            velocity_publisher(vw[0], vw[1])
+            vw = compute_vw(errorArray[0], errorArray[1], errorArray[2], .14, .02, 0.22)
+            velocity_publisherTF(vw[0], vw[1])
 
         rate.sleep()
 
@@ -180,13 +188,16 @@ def reachPoint():
 
 def reachPointOdom(destination_x, destination_y, destination_angle):
     global rate
+    global current_x, current_y, twist_angle, start_x, start_y, start_angle
     rospy.sleep(2)
     start_x = current_x
     start_y = current_y
     start_angle = twist_angle
 
+    # Destination angle in radians
     destination_theta = np.radians(destination_angle)
     
+    # Initialize cumulative transformation for the destination
     cumulative_transform = np.array([[math.cos(start_angle), -math.sin(start_angle), 0, start_x],
                                      [math.sin(start_angle), math.cos(start_angle), 0, start_y],
                                      [0, 0, 1, 0],
@@ -207,15 +218,34 @@ def reachPointOdom(destination_x, destination_y, destination_angle):
 
     # Loop to move the robot towards the target position
     while not rospy.is_shutdown():
+        # Calculate error from current to destination
         xythetaArray = transformcoordinates(transformed_x, transformed_y, transformed_theta)
         errorArray = cartesian2polar(xythetaArray[0], xythetaArray[1], xythetaArray[2])
-
+        # Control output (velocity and angular velocity)
         vw = compute_vw(errorArray[0], errorArray[1], errorArray[2], 0.15, 0.16, -0.12)
 
-        velocity_publisherTF(vw[0], vw[1])
+        # Apply the velocity limits
+        velocity_publisher(vw[0], vw[1])
 
+        # Stop condition for position error
         if abs(errorArray[0]) < 0.08:
             break
+
+        rate.sleep()
+    
+    # Stop the robot after reaching the target
+    velocity_publisher(0, 0)
+
+    rospy.loginfo("Reached the destination: x = %f, y = %f, angle = %f", current_x, current_y, xythetaArray[2])
+    # Turn the robot to face the destination angle
+    while abs(xythetaArray[2]) > np.radians(1): 
+        velocity_publisher(0, 0.1)  # Turn robot with angular velocity
+        xythetaArray = transformcoordinates(transformed_x, transformed_y, transformed_theta)
+
+        rospy.loginfo("Reached the destination: x = %f, y = %f, angle = %f", current_x, current_y, xythetaArray[2])
+        rate.sleep()
+    velocity_publisher(0,0)
+    rospy.loginfo("Reached the destination: x = %f, y = %f, angle = %f", destination_x, destination_y, destination_theta)
 
 def main():
     global cmd_vel_pubTF, last_received_timeTF, rate
@@ -224,78 +254,36 @@ def main():
     rospy.sleep(1)
     last_received_time = time()  # Initialize the last received time
     rospy.init_node('odom_sub_node', anonymous=False)
+     # Subscriber to the "/odom" topic for current position updates
+    rospy.Subscriber("odom", Odometry, counter_callback)
+
 
     rate = rospy.Rate(15)  # 15Hz loop rate
+
     rospy.Subscriber("/tfapril", TFMessage, counter_callbackTF)
     cmd_vel_pubTF = rospy.Publisher('/visionGuidance/cmd_vel', Twist, queue_size=100)
 
-    # Subscriber to the "/odom" topic for current position updates
-    rospy.Subscriber("odom", Odometry, counter_callback)
 
     # Publisher for sending velocity commands
-    cmd_vel_pub = rospy.Publisher('/controller/cmd_vel', Twist, queue_size=100)
+    cmd_vel_pub = rospy.Publisher('controller/cmd_vel', Twist, queue_size=100)
 
     rospy.sleep(3)
+    reachPointOdom(0,0,-90)
 
-    #with new multiplexer
-    reachPointOdom(.93,0,0)
+    rospy.sleep(1)
+
+    reachPoint()
     reachPointOdom(0,0,90)
-    #look for tag
+    rospy.sleep(1)
 
     reachPoint()
-
-    #1st corner
-    reachPointOdom(0,0, -90)
-    reachPoint()
-
-    #crossing catwalk
-
-    reachPointOdom(0,0,-90)
-    reachPoint()
-    #in second corner before robot arm 
-
-    reachPointOdom(0,0,-90)
-    reachPointOdom(.93,0,0)
-    #communicate with arm 
-
-    rospy.sleep(10)
-    reachPointOdom(0,0,-180)
-    reachPointOdom(.93,0,0)
-    reachPointOdom(0,0, 90)
-    #in 3rd corner facing far tag
-
-    reachPoint()
-    #need to stop far away 
-
-
-    #assuming stopped at right distinace 
-    reachPointOdom(0,0, 90)
-    reachPoint()
-    reachPointOdom(0,0, -90)
-    #in 4th corner facing last tag
-
-    reachPoint()
-    reachPointOdom(0,0, -90)
-    #in 5th corner facing final position
-
-    reachPointOdom(.93,0,0)
-
-    #DONE 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    reachPointOdom(0,0,90)
+    rospy.sleep(1)
+    reachPointOdom(.88,0,0)
+    reachPointOdom(0,0,90)
+    rospy.sleep(1)
+    reachPointOdom(0,0,180)
+    rospy.sleep(1)
 
 
     #rospy.spin()
