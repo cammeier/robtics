@@ -175,14 +175,15 @@ def reachPoint():
         if time() - last_received_timeTF > INACTIVITY_THRESHOLD:
             rospy.loginfo("No new data received, turning in place.")
             turn_in_place()  # Start turning
-
         else:
             # Update errorArray and compute new velocity commands
             errorArray = cartesian2polar(current_xTF, current_yTF, twist_angleTF)
             vw = compute_vw(errorArray[0], errorArray[1], errorArray[2], .14, .02, 0.22)
             velocity_publisherTF(vw[0], vw[1])
 
-        rate.sleep()
+    stop_robot()  # Stop when the target is reached
+    rate.sleep()
+
 
     stop_robot()  # Stop when the target is reached
 
@@ -261,7 +262,7 @@ def main():
     rate = rospy.Rate(15)  # 15Hz loop rate
 
     rospy.Subscriber("/tfapril", TFMessage, counter_callbackTF)
-    cmd_vel_pubTF = rospy.Publisher('/visionGuidance/cmd_vel', Twist, queue_size=100)
+    cmd_vel_pubTF = rospy.Publisher('/visionGuidance/cmd_vel', Twist, queue_size=1)
 
 
     # Publisher for sending velocity commands
