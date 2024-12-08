@@ -1,4 +1,4 @@
-!/usr/bin/env python3
+#!/usr/bin/env python3
 import tf
 import math
 import numpy as np
@@ -26,6 +26,7 @@ global current_xTF
 global twist_angleTF
 global last_received_timeTF
 global turn_directionTF
+global current_zTF
 cmd_vel_pubTF = None
 
 
@@ -38,6 +39,61 @@ w_max = 0.4   # Maximum angular velocity (rad/s)
 INACTIVITY_THRESHOLD = 0.25  # 5 seconds of inactivity
 TURN_SPEED = 0.1  # The angular speed for turning
 
+def reachPointOdom2():
+    global rate
+    global current_x, current_y, twist_angle, start_x, start_y, start_angle
+    rospy.sleep(2)
+    start_x = current_x
+    start_y = current_y
+    start_angle = twist_angle
+
+    # Destination angle in radians
+    destination_theta = np.radians(0)
+    
+    # Initialize cumulative transformation for the destination
+    cumulative_transform = np.array([[math.cos(start_angle), -math.sin(start_angle), 0, start_x],
+                                     [math.sin(start_angle), math.cos(start_angle), 0, start_y],
+                                     [0, 0, 1, 0],
+                                     [0, 0, 0, 1]])
+    destination_transform = np.array([
+        [math.cos(np.radians(0)), -math.sin(np.radians(0)), 0, (current_xTF-.20)],
+        [math.sin(np.radians(0)), math.cos(np.radians(0)), 0, current_yTF+.15],
+        [0, 0, 1, 0],
+        [0, 0, 0, 1]
+    ])
+
+
+    cumulative_transform = np.matmul(cumulative_transform, destination_transform)
+
+    # Extract transformed position and orientation
+    transformed_x = cumulative_transform[0, 3]
+    transformed_y = cumulative_transform[1, 3]
+    transformed_theta = math.atan2(cumulative_transform[1, 0], cumulative_transform[0, 0])
+
+    # Loop to move the robot towards the target position
+    while not rospy.is_shutdown():
+        # Calculate error from current to destination
+        xythetaArray = transformcoordinates(transformed_x, transformed_y, transformed_theta)
+        errorArray = cartesian2polar(xythetaArray[0], xythetaArray[1], xythetaArray[2])
+
+        # Control output (velocity and angular velocity)
+        vw = compute_vw(errorArray[0], errorArray[1], errorArray[2], 0.15, 0.16, -0.12)
+
+        # Apply the velocity limits
+        velocity_publisher(vw[0], vw[1])
+
+        # Stop condition for position error
+        if abs(errorArray[0]) < 0.08:
+            break
+
+        rate.sleep()
+
+
+    move_cmd = Twist()
+    move_cmd.linear.x = 0
+    move_cmd.angular.z = 0
+    cmd_vel_pub.publish(move_cmd)
+
 def counter_callback(msg):
     global current_x, current_y, twist_angle
     orientation_q = msg.pose.pose.orientation
@@ -45,30 +101,32 @@ def counter_callback(msg):
     twist_angle = euler[2]
     current_y = msg.pose.pose.position.y
     current_x = msg.pose.pose.position.x
+
 def counter_callbackTF(msg):
-    global current_yTF, current_xTF, twist_angleTF, last_received_timeTF, turn_directionTF
+    global current_yTF, current_xTF,current_zTF , twist_angleTF, last_received_timeTF, turn_directionTF
 
     # Update the last received time
     last_received_timeTF = time()
 
     # Iterate through all transforms in the TFMessage
     for transform in msg.transforms:
-        rospy.loginfo("Received transform:")
-        rospy.loginfo("Translation: x=%f, y=%f, z=%f",
-            transform.transform.translation.x,
-            transform.transform.translation.y,
-            transform.transform.translation.z)        # Access translation values
+#        rospy.loginfo("Received transform:")
+#        rospy.loginfo("Translation: x=%f, y=%f, z=%f",
+#            transform.transform.translation.x,
+#            transform.transform.translation.y,
+#            transform.transform.translation.z)        # Access translation values
         current_xTF = transform.transform.translation.z
         current_yTF = transform.transform.translation.y
-
+        current_zTF = transform.transform.translation.x
 
         orientation_q = transform.transform.rotation
         _, _, twist_angleTF = tf.transformations.euler_from_quaternion(
             [orientation_q.x, orientation_q.y, orientation_q.z, orientation_q.w]
         )
         turn_directionTF = orientation_q.z
+
         # Log the values
-        rospy.loginfo("\nx = %f, y = %f, twist_angle = %f\n", current_xTF, current_yTF, twist_angleTF)
+ #       rospy.loginfo("\nx = %f, y = %f, twist_angle = %f\n", current_xTF, current_yTF, twist_angleTF)
 
 
 def cartesian2polar(x, y, theta): 
@@ -79,18 +137,20 @@ def cartesian2polar(x, y, theta):
 
 def transformcoordinates(destination_x, destination_y, destination_theta):
     global current_x, current_y, twist_angle, start_x, start_y, start_angle
+
     dx = current_x
     dy = current_y
     dtheta = twist_angle
-    
+  
     RitoR0 = np.array([[math.cos(dtheta), -math.sin(dtheta), 0, dx],
                        [math.sin(dtheta), math.cos(dtheta), 0, dy],
                        [0, 0, 1, 0],
                        [0, 0, 0, 1]])
-    
+
     ItoR0 = np.array([[math.cos(destination_theta), -math.sin(destination_theta), 0, destination_x],
                       [math.sin(destination_theta), math.cos(destination_theta), 0, destination_y],
                       [0, 0, 1, 0],
+
                       [0, 0, 0, 1]])
 
     RitoI = np.matmul(np.linalg.inv(RitoR0), ItoR0)
@@ -119,10 +179,10 @@ def turn_in_place():
    # move_cmd.linear.x = 0
    # cmd_vel_pub.publish(move_cmd)
     #rospy.sleep(1) 
-    if turn_directionTF  > 0: 
-       move_cmd.angular.z = -TURN_SPEED  # Positive for clockwise, negative for counterclockwise
-    if turn_directionTF  < 0:
+    if turn_directionTF  > 0 : 
        move_cmd.angular.z = TURN_SPEED  # Positive for clockwise, negative for counterclockwise
+    if turn_directionTF  < 0 :
+       move_cmd.angular.z = -TURN_SPEED  # Positive for clockwise, negative for counterclockwise
     cmd_vel_pub.publish(move_cmd)
 
 def stop_robot():
@@ -137,10 +197,7 @@ def velocity_publisherTF(v , w):
     move_cmd  = Twist()
 
 #    rospy.loginfo("v = %f u = %f " , v, w )
-
     move_cmd.linear.x = v
-    if move_cmd.linear.x > 0.1:
-        move_cmd.linear.x = .05
     move_cmd.angular.z = w
     cmd_vel_pub.publish(move_cmd) 
     
@@ -154,39 +211,60 @@ def velocity_publisher(v, w):
     move_cmd.angular.z = w
     cmd_vel_pub.publish(move_cmd) 
 
-def reachPoint():
-    global last_received_timeTF, current_xTF, current_yTF
+def reachPointOdom3():
+    global rate
+    global current_x, current_y, twist_angle, start_x, start_y, start_angle
+    rospy.sleep(2)
+    start_x = current_x
+    start_y = current_y
+    start_angle = twist_angle
 
-    # If no tag data is available, try to find a tag (e.g., keep turning in place)
-    while current_xTF is None or current_yTF is None:
-        rospy.loginfo("No tag data received. Turning in place to search for tag.")
-        turn_in_place()
-        rospy.sleep(1)  # Give some time to rotate
-        rospy.loginfo("Trying to find tag...")
-        continue  # Keep turning until we get the tag data
-
-    # Main loop to drive towards the target point
-    errorArray = cartesian2polar(current_xTF, current_yTF, twist_angleTF)
-    vw = compute_vw(errorArray[0], errorArray[1], errorArray[2], .14, .02, .22)
-    velocity_publisher(vw[0], vw[1])
-
-    while abs(errorArray[0]) > 0.35:
-        # Check if we haven't received a new message in a while
-        if time() - last_received_timeTF > INACTIVITY_THRESHOLD:
-            rospy.loginfo("No new data received, turning in place.")
-            turn_in_place()  # Start turning
-        else:
-            # Update errorArray and compute new velocity commands
-            errorArray = cartesian2polar(current_xTF, current_yTF, twist_angleTF)
-            vw = compute_vw(errorArray[0], errorArray[1], errorArray[2], .14, .02, 0.22)
-            velocity_publisherTF(vw[0], vw[1])
-
-    stop_robot()  # Stop when the target is reached
-    rate.sleep()
+    # Destination angle in radians
+    destination_theta = np.radians(0)
+    
+    # Initialize cumulative transformation for the destination
+    cumulative_transform = np.array([[math.cos(start_angle), -math.sin(start_angle), 0, start_x],
+                                     [math.sin(start_angle), math.cos(start_angle), 0, start_y],
+                                     [0, 0, 1, 0],
+                                     [0, 0, 0, 1]])
+    destination_transform = np.array([
+        [math.cos(np.radians(0)), -math.sin(np.radians(0)), 0, (current_xTF-.20)],
+        [math.sin(np.radians(0)), math.cos(np.radians(0)), 0, current_yTF],
+        [0, 0, 1, 0],
+        [0, 0, 0, 1]
+    ])
 
 
-    stop_robot()  # Stop when the target is reached
+    cumulative_transform = np.matmul(cumulative_transform, destination_transform)
 
+    # Extract transformed position and orientation
+    transformed_x = cumulative_transform[0, 3]
+    transformed_y = cumulative_transform[1, 3]
+    transformed_theta = math.atan2(cumulative_transform[1, 0], cumulative_transform[0, 0])
+
+    # Loop to move the robot towards the target position
+    while not rospy.is_shutdown():
+        # Calculate error from current to destination
+        xythetaArray = transformcoordinates(transformed_x, transformed_y, transformed_theta)
+        errorArray = cartesian2polar(xythetaArray[0], xythetaArray[1], xythetaArray[2])
+
+        # Control output (velocity and angular velocity)
+        vw = compute_vw(errorArray[0], errorArray[1], errorArray[2], 0.15, 0.16, -0.12)
+
+        # Apply the velocity limits
+        velocity_publisher(vw[0], vw[1])
+
+        # Stop condition for position error
+        if abs(errorArray[0]) < 0.04:
+            break
+
+        rate.sleep()
+
+
+    move_cmd = Twist()
+    move_cmd.linear.x = 0
+    move_cmd.angular.z = 0
+    cmd_vel_pub.publish(move_cmd)
 def reachPointOdom(destination_x, destination_y, destination_angle):
     global rate
     global current_x, current_y, twist_angle, start_x, start_y, start_angle
@@ -222,6 +300,7 @@ def reachPointOdom(destination_x, destination_y, destination_angle):
         # Calculate error from current to destination
         xythetaArray = transformcoordinates(transformed_x, transformed_y, transformed_theta)
         errorArray = cartesian2polar(xythetaArray[0], xythetaArray[1], xythetaArray[2])
+
         # Control output (velocity and angular velocity)
         vw = compute_vw(errorArray[0], errorArray[1], errorArray[2], 0.15, 0.16, -0.12)
 
@@ -265,30 +344,67 @@ def main():
     cmd_vel_pubTF = rospy.Publisher('/visionGuidance/cmd_vel', Twist, queue_size=1)
 
 
+
     # Publisher for sending velocity commands
     cmd_vel_pub = rospy.Publisher('controller/cmd_vel', Twist, queue_size=100)
 
-    rospy.sleep(3)
-    reachPointOdom(0,0,-90)
+#    rospy.sleep(3)
+ #   reachPoint()
+
+   # rospy.sleep(3)
+
+#    reachPointOdom(0,0,0)
+ #   rospy.sleep(5)
+   # reachPointOdom(0,0,90)
+    rospy.sleep(1)
+    reachPointOdom(.87,0,0)
+    reachPointOdom(0,0,-90.5)
+    rospy.loginfo("**************************Reached corner 1")
 
     rospy.sleep(1)
+    rospy.loginfo("*********************Persuing Tag 1")
+    reachPointOdom2()
+  #  rospy.sleep(3)
 
-    reachPoint()
-    reachPointOdom(0,0,90)
-    rospy.sleep(1)
+    reachPointOdom(0,0,-85.5)
+    rospy.loginfo("$$$$$$$$$$$$$$$$$$Reached corner 2")
+ #   reachPointOdom(0,0,-85)
 
-    reachPoint()
+
+   # rospy.sleep(5)
+    rospy.loginfo("$$$$$$$$$$$$$$$Persuing Tag 2")
+
+    reachPointOdom2()
+    reachPointOdom(0,0,86.5)
+    rospy.loginfo("$$$$$$$$$$$$$$$$$$$Reached Tag 2/ Midpoint")
+    reachPointOdom2()
+
+
+
+#    reachPointOdom2()
+
+
+
+
+
+    rospy.sleep(1)
+#    rospy.loginfo("Persuing Tag 3")
+#    reachPoint()
     reachPointOdom(0,0,90)
-    rospy.sleep(1)
-    reachPointOdom(.88,0,0)
-    reachPointOdom(0,0,90)
-    rospy.sleep(1)
-    reachPointOdom(0,0,180)
-    rospy.sleep(1)
+    rospy.loginfo("Reached corner 3")
+#    rospy.sleep(1)
+    reachPointOdom(.79,0,0)
+#    SEND FILES AT THIS POINT TO THE ARM
+
+
+#    reachPointOdom(0,0,90)
+#    rospy.loginfo("Reached corner 4")
+#    rospy.sleep(1)
+#    reachPointOdom(0,0,180)
+#    rospy.sleep(1)
 
 
     #rospy.spin()
 
 if __name__ == '__main__':
     main()
-
