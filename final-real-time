@@ -345,7 +345,7 @@ def reachPointOdomRealUpdate2():
     # Initial starting position
     start_x = current_x
     start_y = current_y
-    start_angle = twist_angle
+    start_angle = twist_angleTF
 
     # Destination angle in radians
     destination_theta = turn_directionTF
